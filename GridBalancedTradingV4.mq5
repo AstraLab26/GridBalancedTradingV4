@@ -112,6 +112,7 @@ double sessionProfit = 0.0;                     // Profit của phiên hiện t�
 double accumulatedProfit = 0.0;                 // Profit tích lũy qua các lần reset
 datetime sessionStartTime = 0;                  // Thời gian bắt đầu phiên
 double initialEquity = 0.0;                     // Vốn ban đầu (Equity) khi bắt đầu phiên
+double minEquity = 0.0;                        // Vốn thấp nhất (khi lỗ lớn nhất) trong phiên
 bool eaStopped = false;                         // Flag dừng EA
 bool isResetting = false;                       // Flag đang trong quá trình reset
 
@@ -219,8 +220,12 @@ int OnInit()
    sessionProfit = 0.0;
    accumulatedProfit = 0.0;
    initialEquity = AccountInfoDouble(ACCOUNT_EQUITY);  // Lưu vốn ban đầu (Balance + Floating)
+   minEquity = initialEquity;  // Khởi tạo vốn thấp nhất bằng vốn ban đầu
    
    Print("Vốn ban đầu phiên: ", initialEquity, " USD");
+   
+   // Tạo panel hiển thị thông tin
+   CreatePanel();
    
    return(INIT_SUCCEEDED);
 }
@@ -230,6 +235,9 @@ int OnInit()
 //+------------------------------------------------------------------+
 void OnDeinit(const int reason)
 {
+   // Xóa panel
+   DeletePanel();
+   
    Print("Grid Balanced Trading EA V4 đã dừng. Reason: ", reason);
 }
 
@@ -292,6 +300,14 @@ void OnTick()
    if(!isTradingStopActive)
    {
       ManageGridOrders();
+   }
+   
+   // Cập nhật panel (mỗi 10 tick để giảm tải)
+   static int tickCount = 0;
+   tickCount++;
+   if(tickCount % 10 == 0)
+   {
+      UpdatePanel();
    }
 }
 
@@ -477,6 +493,7 @@ void ResetEA()
    // Cập nhật vốn ban đầu mới (sau khi đóng tất cả lệnh)
    double oldInitialEquity = initialEquity;
    initialEquity = AccountInfoDouble(ACCOUNT_EQUITY);  // Vốn mới khi EA khởi động lại
+   minEquity = initialEquity;  // Reset vốn thấp nhất về vốn ban đầu mới
    
    // Đảm bảo EA tiếp tục hoạt động sau khi reset
    eaStopped = false;
@@ -1791,25 +1808,8 @@ void CheckLotBasedReset()
       return;
    
    // Tính lot lớn nhất và tổng lot của lệnh đang mở
-   double maxLot = 0.0;
-   double totalLot = 0.0;
-   
-   for(int i = 0; i < PositionsTotal(); i++)
-   {
-      ulong ticket = PositionGetTicket(i);
-      if(ticket > 0)
-      {
-         if(PositionGetInteger(POSITION_MAGIC) == MagicNumber &&
-            PositionGetString(POSITION_SYMBOL) == _Symbol)
-         {
-            double lotSize = PositionGetDouble(POSITION_VOLUME);
-            totalLot += lotSize;
-            
-            if(lotSize > maxLot)
-               maxLot = lotSize;
-         }
-      }
-   }
+   double maxLot = GetMaxLot();
+   double totalLot = GetTotalLot();
    
    // Tính tổng phiên hiện tại
    double currentEquity = AccountInfoDouble(ACCOUNT_EQUITY);
@@ -1830,4 +1830,197 @@ void CheckLotBasedReset()
    }
 }
 
+//+------------------------------------------------------------------+//+------------------------------------------------------------------+
+//| Lấy lot lớn nhất của lệnh đang mở                                |
 //+------------------------------------------------------------------+
+double GetMaxLot()
+{
+   double maxLot = 0.0;
+   
+   for(int i = 0; i < PositionsTotal(); i++)
+   {
+      ulong ticket = PositionGetTicket(i);
+      if(ticket > 0)
+      {
+         if(PositionGetInteger(POSITION_MAGIC) == MagicNumber &&
+            PositionGetString(POSITION_SYMBOL) == _Symbol)
+         {
+            double lotSize = PositionGetDouble(POSITION_VOLUME);
+            if(lotSize > maxLot)
+               maxLot = lotSize;
+         }
+      }
+   }
+   
+   return maxLot;
+}
+
+//+------------------------------------------------------------------+
+//| Lấy tổng lot của lệnh đang mở                                     |
+//+------------------------------------------------------------------+
+double GetTotalLot()
+{
+   double totalLot = 0.0;
+   
+   for(int i = 0; i < PositionsTotal(); i++)
+   {
+      ulong ticket = PositionGetTicket(i);
+      if(ticket > 0)
+      {
+         if(PositionGetInteger(POSITION_MAGIC) == MagicNumber &&
+            PositionGetString(POSITION_SYMBOL) == _Symbol)
+         {
+            totalLot += PositionGetDouble(POSITION_VOLUME);
+         }
+      }
+   }
+   
+   return totalLot;
+}
+
+//+------------------------------------------------------------------+
+//| Tạo panel hiển thị thông tin EA                                   |
+//+------------------------------------------------------------------+
+void CreatePanel()
+{
+   // Xóa các object cũ nếu có
+   DeletePanel();
+   
+   int x = 20;  // Vị trí X
+   int y = 30;  // Vị trí Y
+   int width = 300;  // Chiều rộng panel
+   int lineHeight = 20;  // Chiều cao mỗi dòng
+   
+   // Background panel
+   string bgName = "EA_Panel_BG";
+   ObjectCreate(0, bgName, OBJ_RECTANGLE_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, bgName, OBJPROP_XDISTANCE, x);
+   ObjectSetInteger(0, bgName, OBJPROP_YDISTANCE, y);
+   ObjectSetInteger(0, bgName, OBJPROP_XSIZE, width);
+   ObjectSetInteger(0, bgName, OBJPROP_YSIZE, 200);
+   ObjectSetInteger(0, bgName, OBJPROP_BGCOLOR, clrDarkSlateGray);
+   ObjectSetInteger(0, bgName, OBJPROP_BORDER_TYPE, BORDER_FLAT);
+   ObjectSetInteger(0, bgName, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+   ObjectSetInteger(0, bgName, OBJPROP_BACK, true);
+   ObjectSetInteger(0, bgName, OBJPROP_SELECTABLE, false);
+   
+   int currentY = y + 10;
+   
+   // Biểu đồ
+   CreatePanelLabel("EA_Panel_Symbol", x + 10, currentY, "", clrYellow, 9, false);
+   currentY += lineHeight;
+   
+   // Số lưới tối đa
+   CreatePanelLabel("EA_Panel_MaxLevels", x + 10, currentY, "", clrLightGray, 8, false);
+   currentY += lineHeight;
+   
+   // Khoảng cách lưới
+   CreatePanelLabel("EA_Panel_GridDist", x + 10, currentY, "", clrLightGray, 8, false);
+   currentY += lineHeight;
+   
+   // Số tiền lỗ lớn nhất / số vốn lúc số tiền âm lớn nhất
+   CreatePanelLabel("EA_Panel_MaxLoss", x + 10, currentY, "", clrLightGray, 8, false);
+   currentY += lineHeight;
+   
+   // Số lot của lệnh thực thi lớn nhất / tổng lot của lệnh thực thi lớn nhất
+   CreatePanelLabel("EA_Panel_LotInfo", x + 10, currentY, "", clrLightGray, 8, false);
+   currentY += lineHeight;
+   
+   // Số tiền của các lệnh đang mở
+   CreatePanelLabel("EA_Panel_OpenProfit", x + 10, currentY, "", clrLightGray, 8, false);
+   currentY += lineHeight;
+   
+   // Số tiền của phiên
+   CreatePanelLabel("EA_Panel_SessionProfit", x + 10, currentY, "", clrLightGray, 8, false);
+   
+   // Cập nhật lần đầu
+   UpdatePanel();
+}
+
+//+------------------------------------------------------------------+
+//| Tạo label cho panel                                               |
+//+------------------------------------------------------------------+
+void CreatePanelLabel(string name, int x, int y, string text, color clr, int fontSize, bool bold)
+{
+   ObjectCreate(0, name, OBJ_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, name, OBJPROP_XDISTANCE, x);
+   ObjectSetInteger(0, name, OBJPROP_YDISTANCE, y);
+   ObjectSetString(0, name, OBJPROP_TEXT, text);
+   ObjectSetInteger(0, name, OBJPROP_COLOR, clr);
+   ObjectSetInteger(0, name, OBJPROP_FONTSIZE, fontSize);
+   ObjectSetString(0, name, OBJPROP_FONT, bold ? "Arial Bold" : "Arial");
+   ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
+   ObjectSetInteger(0, name, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+}
+
+//+------------------------------------------------------------------+
+//| Cập nhật panel                                                    |
+//+------------------------------------------------------------------+
+void UpdatePanel()
+{
+   // Theo dõi vốn thấp nhất (khi lỗ lớn nhất)
+   double currentEquity = AccountInfoDouble(ACCOUNT_EQUITY);
+   if(minEquity == 0.0 || currentEquity < minEquity)
+   {
+      minEquity = currentEquity;
+   }
+   
+   // Biểu đồ
+   string symbolName = _Symbol;
+   double currentPrice = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   string priceText = DoubleToString(currentPrice, dgt);
+   ObjectSetString(0, "EA_Panel_Symbol", OBJPROP_TEXT, "Biểu đồ: " + symbolName + " - " + priceText);
+   
+   // Số lưới tối đa
+   ObjectSetString(0, "EA_Panel_MaxLevels", OBJPROP_TEXT, "Số lưới tối đa: " + IntegerToString(MaxGridLevels));
+   
+   // Khoảng cách lưới
+   ObjectSetString(0, "EA_Panel_GridDist", OBJPROP_TEXT, "Khoảng cách lưới: " + DoubleToString(GridDistancePips, 1) + " pips");
+   
+   // Số tiền lỗ lớn nhất / số vốn lúc số tiền âm lớn nhất
+   double maxLoss = initialEquity - minEquity;  // Lỗ lớn nhất = vốn ban đầu - vốn thấp nhất
+   string maxLossText = "Số tiền lỗ lớn nhất / số vốn lúc số tiền âm lớn nhất: $" + DoubleToString(maxLoss, 2) + " / $" + DoubleToString(minEquity, 2);
+   ObjectSetString(0, "EA_Panel_MaxLoss", OBJPROP_TEXT, maxLossText);
+   
+   // Số lot của lệnh thực thi lớn nhất / tổng lot của lệnh thực thi lớn nhất
+   double maxLot = GetMaxLot();
+   double totalLot = GetTotalLot();
+   string lotText = "Số lot của lệnh thực thi lớn nhất / tổng lot của lệnh thực thi lớn nhất: " + DoubleToString(maxLot, 2) + " / " + DoubleToString(totalLot, 2);
+   ObjectSetString(0, "EA_Panel_LotInfo", OBJPROP_TEXT, lotText);
+   
+   // Số tiền của các lệnh đang mở
+   double openProfit = GetTotalOpenProfit();
+   string openProfitText = "Số tiền của các lệnh đang mở: $" + DoubleToString(openProfit, 2);
+   color openProfitColor = (openProfit >= 0) ? clrLime : clrRed;
+   ObjectSetString(0, "EA_Panel_OpenProfit", OBJPROP_TEXT, openProfitText);
+   ObjectSetInteger(0, "EA_Panel_OpenProfit", OBJPROP_COLOR, openProfitColor);
+   
+   // Số tiền của phiên (số tiền lệnh mở và đóng của phiên khi EA reset)
+   double sessionProfitValue = currentEquity - initialEquity;
+   string sessionText = "Số tiền của phiên: $" + DoubleToString(sessionProfitValue, 2);
+   color sessionColor = (sessionProfitValue >= 0) ? clrLime : clrRed;
+   ObjectSetString(0, "EA_Panel_SessionProfit", OBJPROP_TEXT, sessionText);
+   ObjectSetInteger(0, "EA_Panel_SessionProfit", OBJPROP_COLOR, sessionColor);
+   
+   ChartRedraw();
+}
+
+//+------------------------------------------------------------------+
+//| Xóa panel                                                         |
+//+------------------------------------------------------------------+
+void DeletePanel()
+{
+   string objects[] = {
+      "EA_Panel_BG", "EA_Panel_Symbol",
+      "EA_Panel_MaxLevels", "EA_Panel_GridDist",
+      "EA_Panel_MaxLoss", "EA_Panel_LotInfo",
+      "EA_Panel_OpenProfit", "EA_Panel_SessionProfit"
+   };
+   
+   for(int i = 0; i < ArraySize(objects); i++)
+   {
+      ObjectDelete(0, objects[i]);
+   }
+   
+   ChartRedraw();
+}
