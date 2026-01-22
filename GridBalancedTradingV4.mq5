@@ -87,6 +87,7 @@ input double SessionProfitForLotReset = 50.0;                  // Tổng phiên 
 input group "=== CÀI ĐẶT CHUNG ==="
 input int MagicNumber = 123456;                 // Magic Number
 input string CommentOrder = "Grid Balanced V4"; // Comment cho lệnh
+input bool EnableResetNotification = false;     // Bật thông báo về điện thoại khi EA reset
 
 //--- Global variables
 CTrade trade;
@@ -343,7 +344,7 @@ void CheckTotalProfit()
          Print("========================================");
          if(ActionOnTotalProfitOpen == TP_ACTION_RESET_EA)
          {
-            ResetEA();
+            ResetEA("TP Tổng Lệnh Mở");
          }
          else
          {
@@ -393,7 +394,7 @@ void CheckTotalProfit()
          if(ActionOnTotalProfitSession == TP_ACTION_RESET_EA)
          {
             Print("Hành động: RESET EA");
-            ResetEA();
+            ResetEA("TP Tổng Phiên");
          }
          else if(ActionOnTotalProfitSession == TP_ACTION_STOP_EA)
          {
@@ -455,9 +456,10 @@ double GetTotalOpenProfit()
 //+------------------------------------------------------------------+
 //| Reset EA - Khởi động lại tại giá mới                             |
 //+------------------------------------------------------------------+
-void ResetEA()
+void ResetEA(string resetReason = "Thủ công")
 {
    Print("=== RESET EA ===");
+   Print("Lý do reset: ", resetReason);
    
    // Đánh dấu đang trong quá trình reset
    isResetting = true;
@@ -522,6 +524,12 @@ void ResetEA()
    Print("  - Vốn ban đầu mới: ", initialEquity, " USD");
    Print("  - Tổng phiên đã reset về: 0 USD");
    Print("Phiên mới đã bắt đầu - Tổng phiên sẽ tính lại từ vốn ban đầu mới");
+   
+   // Gửi thông báo về điện thoại nếu được bật
+   if(EnableResetNotification)
+   {
+      SendResetNotification(resetReason);
+   }
 }
 
 //+------------------------------------------------------------------+
@@ -1547,7 +1555,7 @@ void ManageTradingStop()
             if(ActionOnTradingStopStepComplete == TP_ACTION_RESET_EA)
             {
                // Reset EA - Mở lại từ đầu tại giá mới
-               ResetEA();
+               ResetEA("Trading Stop, Step Tổng");
             }
             else
             {
@@ -1597,7 +1605,7 @@ void ManageTradingStop()
             if(ActionOnTradingStopStepComplete == TP_ACTION_RESET_EA)
             {
                // Reset EA - Mở lại từ đầu tại giá mới
-               ResetEA();
+               ResetEA("Trading Stop, Step Tổng");
             }
             else
             {
@@ -1836,7 +1844,7 @@ void CheckLotBasedReset()
       Print("EA sẽ RESET và khởi động lại từ đầu tại giá mới");
       Print("========================================");
       
-      ResetEA();
+      ResetEA("Lot-based Reset");
    }
 }
 
@@ -2082,8 +2090,8 @@ void UpdatePanel()
    double maxLoss = maxNegativeProfit;  // Số âm lớn nhất của lệnh đang mở
    double maxLossPercent = (balanceAtMaxLoss > 0) ? (MathAbs(maxLoss) / balanceAtMaxLoss * 100.0) : 0.0;
    
-   string maxLossValue = "$" + DoubleToString(maxLoss, 2);
-   string maxLossCapital = "/ $" + DoubleToString(balanceAtMaxLoss, 2);
+   string maxLossValue = FormatMoney(maxLoss);
+   string maxLossCapital = "/ " + FormatMoney(balanceAtMaxLoss);
    string maxLossPercentText = DoubleToString(maxLossPercent, 1) + "%";
    
    ObjectSetString(0, "EA_Panel_MaxLoss_Value", OBJPROP_TEXT, maxLossValue);
@@ -2113,7 +2121,7 @@ void UpdatePanel()
    
    // Số tiền của các lệnh đang mở
    double openProfit = GetTotalOpenProfit();
-   string openProfitValue = "$" + DoubleToString(openProfit, 2);
+   string openProfitValue = FormatMoney(openProfit);
    color openProfitColor = (openProfit >= 0) ? clrLime : clrRed;
    ObjectSetString(0, "EA_Panel_OpenProfit_Value", OBJPROP_TEXT, openProfitValue);
    ObjectSetInteger(0, "EA_Panel_OpenProfit_Value", OBJPROP_COLOR, openProfitColor);
@@ -2121,7 +2129,7 @@ void UpdatePanel()
    // Số tiền của phiên
    double sessionProfitValue = currentEquity - initialEquity;
    double sessionPercent = (initialEquity > 0) ? (sessionProfitValue / initialEquity * 100.0) : 0.0;
-   string sessionValue = "$" + DoubleToString(sessionProfitValue, 2);
+   string sessionValue = FormatMoney(sessionProfitValue);
    string sessionPercentText = (sessionProfitValue >= 0 ? "+" : "") + DoubleToString(sessionPercent, 2) + "%";
    color sessionColor = (sessionProfitValue >= 0) ? clrLime : clrRed;
    ObjectSetString(0, "EA_Panel_SessionProfit_Value", OBJPROP_TEXT, sessionValue);
@@ -2156,4 +2164,77 @@ void DeletePanel()
    }
    
    ChartRedraw();
+}
+
+//+------------------------------------------------------------------+
+//| Format số tiền với K và M                                          |
+//+------------------------------------------------------------------+
+string FormatMoney(double amount)
+{
+   string result = "";
+   double absAmount = MathAbs(amount);
+   
+   if(absAmount >= 1000000.0)
+   {
+      // Triệu (M)
+      double mValue = absAmount / 1000000.0;
+      result = DoubleToString(mValue, 2) + "M";
+   }
+   else if(absAmount >= 1000.0)
+   {
+      // Nghìn (K)
+      double kValue = absAmount / 1000.0;
+      result = DoubleToString(kValue, 2) + "K";
+   }
+   else
+   {
+      // Dưới 1000
+      result = DoubleToString(absAmount, 2);
+   }
+   
+   // Thêm dấu âm nếu cần
+   if(amount < 0)
+      result = "-" + result;
+   
+   return result + "$";
+}
+
+//+------------------------------------------------------------------+
+//| Gửi thông báo về điện thoại khi EA reset                          |
+//+------------------------------------------------------------------+
+void SendResetNotification(string resetReason)
+{
+   // 1. Biểu đồ
+   string symbolName = _Symbol;
+   
+   // 2. EA Reset về chức năng gì
+   string functionName = resetReason;
+   
+   // 3. Số dư hiện tại
+   double currentBalance = AccountInfoDouble(ACCOUNT_BALANCE);
+   string balanceText = FormatMoney(currentBalance);
+   
+   // 4. Số tiền lỗ lớn nhất / vốn (%)
+   double maxLoss = maxNegativeProfit;
+   double maxLossPercent = (balanceAtMaxLoss > 0) ? (MathAbs(maxLoss) / balanceAtMaxLoss * 100.0) : 0.0;
+   string maxLossText = FormatMoney(maxLoss) + " / " + FormatMoney(balanceAtMaxLoss) + " (" + DoubleToString(maxLossPercent, 2) + "%)";
+   
+   // 5. Số lot lớn nhất / tổng lot lớn nhất
+   string lotText = DoubleToString(maxLotEver, 2) + " / " + DoubleToString(totalLotEver, 2);
+   
+   // Tạo nội dung thông báo
+   string message = "EA RESET\n";
+   message += "Biểu đồ: " + symbolName + "\n";
+   message += "Chức năng: " + functionName + "\n";
+   message += "Số dư: " + balanceText + "\n";
+   message += "Lỗ lớn nhất: " + maxLossText + "\n";
+   message += "Lot: " + lotText;
+   
+   // Gửi thông báo
+   SendNotification(message);
+   
+   Print("========================================");
+   Print("Đã gửi thông báo về điện thoại:");
+   Print(message);
+   Print("========================================");
 }
