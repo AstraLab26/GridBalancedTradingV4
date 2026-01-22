@@ -22,7 +22,8 @@
 - **TP tổng**: 3 loại TP tổng (lệnh mở, phiên, tích lũy) với tùy chọn Reset hoặc Dừng EA
 - **Trading Stop, Step Tổng (Gồng lãi)**: Tính năng V3 - Tự động bảo vệ lãi khi đạt ngưỡng và gồng lãi theo giá
 - **Lot-based Reset**: Tính năng mới V4 - Reset EA dựa trên điều kiện lot và tổng phiên
-- **Panel hiển thị thông tin**: Tính năng mới V4 - Panel trực quan hiển thị thông tin EA trên chart
+- **Panel hiển thị thông tin**: Tính năng mới V4 - Panel trực quan hiển thị thông tin EA trên chart với format số tiền K$/M$
+- **Thông báo về điện thoại**: Tính năng mới V4 - Gửi thông báo push notification về điện thoại khi EA reset
 - **Theo dõi lịch sử**: Một số thông số không reset khi EA reset (số tiền lỗ lớn nhất, số lot lớn nhất, tổng lot lớn nhất)
 - **Tự động bổ sung lệnh**: Tùy chọn tự động tạo lại lệnh khi lệnh cũ bị đóng
 - **Magic Number**: Quản lý lệnh riêng biệt với Magic Number
@@ -118,11 +119,6 @@
 | `TotalLotThreshold` | Tổng lot của lệnh đang mở để kích hoạt (0=off) | 1.0 |
 | `SessionProfitForLotReset` | Tổng phiên hiện tại (USD) để reset khi đạt điều kiện lot (0=off) | 50.0 |
 | `ActionOnLotBasedReset` | Hành động khi đạt điều kiện lot (0=Dừng EA, 1=Reset EA) | Reset EA |
-| `EnableLotBasedReset` | Bật reset dựa trên lot và tổng phiên | false |
-| `MaxLotThreshold` | Lot lớn nhất của lệnh đang mở để kích hoạt (0=off) | 0.1 |
-| `TotalLotThreshold` | Tổng lot của lệnh đang mở để kích hoạt (0=off) | 1.0 |
-| `SessionProfitForLotReset` | Tổng phiên hiện tại (USD) để reset khi đạt điều kiện lot (0=off) | 50.0 |
-| `ActionOnLotBasedReset` | Hành động khi đạt điều kiện lot (0=Dừng EA, 1=Reset EA) | Reset EA |
 
 ### Cài đặt chung
 
@@ -130,6 +126,7 @@
 |---------|-------|------------------|
 | `MagicNumber` | Magic Number để nhận diện lệnh của EA | 123456 |
 | `CommentOrder` | Comment được gắn vào mỗi lệnh | "Grid Balanced V4" |
+| `EnableResetNotification` | Bật thông báo về điện thoại khi EA reset | false |
 
 ## 📊 Cách hoạt động
 
@@ -328,9 +325,36 @@ EA tự động hiển thị panel thông tin trên chart với các thông tin:
 - Panel tự động cập nhật mỗi 10 tick
 - Hiển thị ở góc trên bên trái của chart
 - Màu sắc thay đổi theo trạng thái (xanh = lãi, đỏ = lỗ)
+- **Format số tiền tự động**: Tất cả số tiền hiển thị với format K$ và M$ (ví dụ: 1.20K$, 1.00M$)
 - Một số thông số không reset khi EA reset để theo dõi lịch sử
 
-### 10. Reset EA
+### 10. Thông báo về điện thoại - Tính năng mới V4
+
+Khi `EnableResetNotification = true`, EA sẽ tự động gửi thông báo push notification về điện thoại qua MT5 Mobile App khi EA reset.
+
+**Nội dung thông báo bao gồm:**
+1. **Biểu đồ**: Tên symbol đang giao dịch (ví dụ: EURUSD)
+2. **Chức năng**: Lý do reset (TP Tổng Lệnh Mở, TP Tổng Phiên, Trading Stop, Step Tổng, Lot-based Reset, hoặc Thủ công)
+3. **Số dư**: Số dư hiện tại tại thời điểm reset (format K$/M$)
+4. **Lỗ lớn nhất**: Số âm lớn nhất từng có / số dư tại thời điểm đó / phần trăm
+5. **Lot**: Lot lớn nhất từng có / tổng lot lớn nhất từng có
+
+**Ví dụ thông báo:**
+```
+EA RESET
+Biểu đồ: EURUSD
+Chức năng: TP Tổng Phiên
+Số dư: 10.50K$
+Lỗ lớn nhất: -1.20K$ / 10.00K$ (12.00%)
+Lot: 0.50 / 5.00
+```
+
+**Lưu ý:**
+- Cần kết nối tài khoản MT5 với MT5 Mobile App để nhận thông báo
+- Thông báo chỉ được gửi khi EA reset, không gửi khi EA dừng
+- Tất cả số tiền trong thông báo được format tự động với K$ và M$ (2 số thập phân)
+
+### 11. Reset EA
 Khi reset:
 - Đóng tất cả pending orders
 - Đóng tất cả positions đang mở
@@ -345,7 +369,7 @@ Khi reset:
   - Tổng lot lớn nhất từng có (`totalLotEver`)
 - EA tiếp tục hoạt động với cấu hình mới
 
-### 11. Dừng EA
+### 12. Dừng EA
 Khi dừng:
 - Đóng tất cả pending orders
 - Đóng tất cả positions đang mở
@@ -454,6 +478,11 @@ SessionProfitForLotReset = 50.0
 ActionOnLotBasedReset = Reset EA
 ```
 
+### Cấu hình với thông báo về điện thoại
+```
+EnableResetNotification = true
+```
+
 ## 🔄 So sánh các phiên bản
 
 ### So sánh V2 và V3
@@ -479,6 +508,8 @@ ActionOnLotBasedReset = Reset EA
 | Trading Stop, Step Tổng | Có | Có |
 | Lot-based Reset | Không | Có (Tính năng mới) |
 | Panel hiển thị thông tin | Không | Có (Tính năng mới) |
+| Format số tiền K$/M$ | Không | Có (trên panel và thông báo) |
+| Thông báo về điện thoại | Không | Có (Tính năng mới) |
 | Theo dõi lịch sử lỗ lớn nhất | Không | Có (không reset) |
 | Theo dõi lịch sử lot lớn nhất | Không | Có (không reset) |
 | Action cho Lot-based Reset | Không | Có (Dừng EA hoặc Reset EA) |
@@ -493,6 +524,7 @@ Nếu gặp vấn đề hoặc có câu hỏi về **Grid Balanced Trading V4**,
 - Kiểm tra log debug để theo dõi profit và trạng thái EA
 - Kiểm tra panel hiển thị trên chart để theo dõi thông tin EA
 - Đọc kỹ phần Trading Stop, Step Tổng và Lot-based Reset để hiểu cách hoạt động
+- Để nhận thông báo về điện thoại, cần kết nối tài khoản MT5 với MT5 Mobile App và bật `EnableResetNotification = true`
 
 ## 📜 Giấy phép
 
@@ -500,4 +532,4 @@ EA này được cung cấp "as-is" không có bất kỳ bảo đảm nào. S�
 
 ---
 
-**Lưu ý**: Luôn test kỹ trên tài khoản demo trước khi sử dụng thực tế. Giao dịch có rủi ro, có thể dẫn đến mất vốn. Đặc biệt cẩn thận khi sử dụng tính năng gấp thếp, Trading Stop và Lot-based Reset vì có thể làm tăng rủi ro đáng kể. Panel hiển thị thông tin giúp theo dõi trạng thái EA, nhưng không thay thế việc quản lý rủi ro cẩn thận.
+**Lưu ý**: Luôn test kỹ trên tài khoản demo trước khi sử dụng thực tế. Giao dịch có rủi ro, có thể dẫn đến mất vốn. Đặc biệt cẩn thận khi sử dụng tính năng gấp thếp, Trading Stop và Lot-based Reset vì có thể làm tăng rủi ro đáng kể. Panel hiển thị thông tin giúp theo dõi trạng thái EA, nhưng không thay thế việc quản lý rủi ro cẩn thận. Thông báo về điện thoại giúp theo dõi EA từ xa, nhưng cần đảm bảo kết nối ổn định với MT5 Mobile App.
